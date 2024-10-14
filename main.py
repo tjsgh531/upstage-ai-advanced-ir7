@@ -10,6 +10,9 @@ import gc
 from dotenv import load_dotenv
 import os
 
+# ElasticSearch 실행
+# sudo -u daemon -s bash -c "bash /upstage-ai-advanced-ir7/elasticsearch-8.8.0/bin/elasticsearch"
+
 class Main:
     def __init__(self):
         # VRAM 초기화
@@ -50,8 +53,8 @@ class Main:
 
         # 색인 만들기 & docs 추가
         self.search_engine.create_elasticsearch_index(docs)
-        self.search_engine.create_faiss_index(self.faiss_path, docs) # 처음이면 create_faiss
-        # self.search_engine.load_faiss_index(self.faiss_path) # create_faiss_index로 만든 적있으면 load
+        # self.search_engine.create_faiss_index(self.faiss_path, docs) # 처음이면 create_faiss
+        self.search_engine.load_faiss_index(self.faiss_path, docs) # create_faiss_index로 만든 적있으면 load
         self.clean_vram()
 
         # standalone query 추가

@@ -126,9 +126,10 @@ class SearchEngine:
 
         print("\nfaiss index 생성 완료!")
 
-    def load_faiss_index(self, faiss_path):
+    def load_faiss_index(self, faiss_path, docs):
         print("\nfaiss index load 중 ...")
         self.index = faiss.read_index(faiss_path)
+        self.documents.extend(docs)
         print("\nfaiss index load 완료!")
 
     # faiss
@@ -146,7 +147,6 @@ class SearchEngine:
             "score": float(distances[0][idx]),
             "content": self.documents[i]["content"]
             } for idx, i in enumerate(indices[0])]
-
 
         return references
 
@@ -189,7 +189,7 @@ class SearchEngine:
     def search_quries(self, queries):
         results = []
 
-        for query in queries:
+        for query in tqdm(queries):
             eval_id = query["eval_id"]
             standalone_query = query['standalone_query']
             
@@ -198,7 +198,7 @@ class SearchEngine:
 
             refs_ids = {}
             refs = []
-            for faiss_ref, es_ref in zip(es_references):
+            for faiss_ref, es_ref in zip(faiss_references, es_references):
                 faiss_id = faiss_ref["docid"]
                 es_id = es_ref["docid"]
 
