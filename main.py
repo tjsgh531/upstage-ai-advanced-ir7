@@ -22,7 +22,6 @@ class Main:
         load_dotenv('/upstage-ai-advanced-ir7/.env')
         upstage_api_key = os.getenv('UPSTAGE_API_KEY')
         os.environ["OPENAI_API_KEY"] = upstage_api_key
-        
 
         # 사용자 설정
         embedding_dim = 4096
@@ -34,7 +33,7 @@ class Main:
 
         # tool 생성
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.search_engine = SearchEngine(embedding_dim, upstage_api_key)
+        self.search_engine = SearchEngine(embedding_dim, upstage_api_key, device)
         self.query_transformer = QueryTransformer(query_transformer_model_name, device)
         self.generator = Generate(generate_model_name, device)
 
@@ -58,7 +57,7 @@ class Main:
         self.clean_vram()
 
         # standalone query 추가
-        standalone_query_eval_data = self.query_transformer.add_standalone_query(eval_data[:5])
+        standalone_query_eval_data = self.query_transformer.add_standalone_query(eval_data)
         self.clean_vram()
 
         # 검색

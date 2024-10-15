@@ -1,21 +1,14 @@
-from transformers import AutoTokenizer, AutoModelForCausalLM, QuantoConfig
 import torch
 from tqdm import tqdm
 
 class Generate():
-    def __init__(self, model_name, device):
+    def __init__(self, tokenizer, model, device):
         self.device = device
+        self.tokenizer = tokenizer
+        self.model = model
 
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-        quantization_config = QuantoConfig(weights="int8")
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            device_map = "auto",
-            load_in_8bit = True
-            )
-
-    def create_text(self, query, references):
+    def create_text(self, query, references, history):
+        # 지시 사항
         instruction_message = f"""
         ## Role
         - 과학 상식 전문가
@@ -23,15 +16,17 @@ class Generate():
         ## Instructions
         - 주어진 참조 문헌 정보를 활용하여 질문에 대해 간결하게 답변을 생성한다.
         - 주어진 참조 문헌 정보로 대답할 수 없는 경우는 정보가 부족해서 답을 할 수 없다고 대답한다.
-        - 주어진 참조 문헌 정보를 복합적으로 사용하여 답변을 생성 할 수 있다.
-        - 어떤 참조 문헌을 참조했는지 명확히 밝히면서 답변을 생성한다.
-        - 한국어로 답변을 생성한다.
+        - 최근 대화를 참조하여 답변을 명확하게 생성할 수 있으면 최근 대화를 참조하여 대답한다.
+        - 관련 대화를 참조하여 답변을 명확하게 생성할 수 있으면 관련 대화를 참조하여 대답한다.
+        - 여러가지를 복합적으로 참조하여도 된다.
+        - 무엇을 참조하였는지 밝히면서 대답한다.
 
         ## 질문
         {query}
 
         """
 
+        # 참조 문헌
         reference_messages = "\n"
         for idx, ref in enumerate(references):
             reference_messages += f"""
@@ -40,10 +35,26 @@ class Generate():
 
             """
 
-        return instruction_message + reference_messages + "\n ## 답변 \n"
+        #과거 대화
+        current_dialogue = '\n\n'.join(history['current_dialogue'])
+        recent_dialogue = '\n\n'.join(history['sim_dialogue'])
+        history_dialogue = f"""
 
-    def generate_response(self, query, references):
-        input_text = self.create_text(query, references)
+        ## 관련 대화
+        {recent_dialogue}
+
+        ## 최근 대화
+        {current_dialogue}
+
+        """
+
+        input_text = instruction_message + reference_messages + history_dialogue + "\n ## 답변 \n" 
+        
+        print(input_text)
+        return input_text
+
+    def generate_response(self, query, references, history):
+        input_text = self.create_text(query, references, history)
         inputs = self.tokenizer(input_text, return_tensors="pt").to(self.device)
 
         with torch.no_grad():

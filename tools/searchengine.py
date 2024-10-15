@@ -8,15 +8,21 @@ from openai import OpenAI
 from tqdm import tqdm
 
 class SearchEngine:
-    def __init__(self, dim, api_key):
+    def __init__(self, solar_client, dim, device):
+        self.device = device
         self.index = faiss.IndexFlatL2(dim)
-        self.client = OpenAI(
-            api_key = api_key,
-            base_url="https://api.upstage.ai/v1/solar"
-        )
+        self.client = solar_client
         self.documents = []
 
         self.es_index_name = "es_index"
+
+        # reranking 토크나이저 & 모델
+        self.tokenizer = AutoTokenizer.from_pretrained("Dongjin-kr/ko-reranker")
+        self.model = AutoModelForSequenceClassification.from_pretrained(
+            "Dongjin-kr/ko-reranker",
+            device_map="auto",
+            load_in_4bit = True
+        ) 
     
     # elastic
     def create_elasticsearch_index(self, docs):
@@ -78,7 +84,7 @@ class SearchEngine:
         print("\nelastic search client 생성 완료 ... ")
 
     # elastic
-    def elastic_search(self, query_str, k=150):
+    def elastic_search(self, query_str, k=50):
         query = {
             "match" : {
                 "content" : {
@@ -133,7 +139,7 @@ class SearchEngine:
         print("\nfaiss index load 완료!")
 
     # faiss
-    def faiss_search(self, query:str, k=150):
+    def faiss_search(self, query:str, k=50):
         query_embedding = self.client.embeddings.create(
             model = "embedding-query",
             input = query
@@ -146,7 +152,7 @@ class SearchEngine:
             "docid": self.documents[i]["docid"],
             "score": float(distances[0][idx]),
             "content": self.documents[i]["content"]
-            } for idx, i in enumerate(indices[0])]
+            } for idx, i in enumerate(indices[0]) if idx != -1]
 
         return references
 
@@ -158,16 +164,13 @@ class SearchEngine:
 
     # reranking
     def reranker(self, query, docs):
-        tokenizer = AutoTokenizer.from_pretrained("Dongjin-kr/ko-reranker")
-        model = AutoModelForSequenceClassification.from_pretrained("Dongjin-kr/ko-reranker")
-
         pairs = [[query, doc['content']] for doc in docs]
-        model.eval()
+        self.model.eval()
 
         with torch.no_grad():
-            inputs = tokenizer(pairs, padding = True, truncation = True, return_tensors = 'pt', max_length=512)
-            scores = model(**inputs, return_dict=True).logits.view(-1, ).float()
-            scores = self.exp_normalize(scores.numpy())
+            inputs = self.tokenizer(pairs, padding = True, truncation = True, return_tensors = 'pt', max_length=512).to(self.device)
+            scores = self.model(**inputs, return_dict=True).logits.view(-1, ).float()
+            scores = self.exp_normalize(scores.cpu().numpy())
             indicies = [(-score, idx) for idx, score in enumerate(scores)]
             heapq.heapify(indicies)
 
@@ -183,12 +186,13 @@ class SearchEngine:
             topk.append(docid)
             references.append(reference)
 
-        return topk, references        
+        return topk, references
 
     # main
-    def search_quries(self, queries):
+    def search_queries(self, queries):
         results = []
 
+        print("검생 중 ...")
         for query in tqdm(queries):
             eval_id = query["eval_id"]
             standalone_query = query['standalone_query']
@@ -210,7 +214,11 @@ class SearchEngine:
                     refs_ids[es_id] = 1
                     refs.append(es_ref)
 
-            topk, references = self.reranker(standalone_query, refs)
+            print(f"query와 연관된 문서 개수{len(refs)}")
+            topk = []
+            references = []
+            if len(refs) > 0:
+                topk, references = self.reranker(standalone_query, refs)
 
             results.append({
                 "eval_id" : eval_id,

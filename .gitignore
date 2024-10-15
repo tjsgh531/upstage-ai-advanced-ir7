@@ -1,6 +1,7 @@
 /outputs
 /data
 /elasticsearch-8.8.0
+./rag_system.ipynb
 kkh-baseline-4.py
 Miniconda3-latest-Linux-x86_64.sh
 .env

@@ -1,29 +1,38 @@
-from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 from tqdm import tqdm
+from openai import OpenAI
+import numpy as np
+import faiss
 
 class QueryTransformer():
-    def __init__(self, model_name, device):
+    def __init__(self, tokenizer, model, device):
+        self.tokenizer = tokenizer
+        self.model = model
         self.device = device
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            device_map="auto",
-            load_in_8bit=True
-        )
+
 
     def generate_standalone_query(self, chat_prompt):
-        inputs = self.tokenizer(chat_prompt, return_tensors="pt", padding=True).to(self.device)
+        chat_template_prompt = self.tokenizer.apply_chat_template(
+            chat_prompt,
+            tokenize = False,
+        )
+
+        inputs = self.tokenizer(
+            chat_template_prompt,
+            return_tensors="pt"
+        ).to(self.device)
 
         with torch.no_grad():
-            output = self.model.generate(**inputs, max_new_tokens=50).to(self.device)
-        
-        search_query = self.tokenizer.decode(output[0], skip_special_tokens=True)
-        result = [sent for sent in search_query.split('\n') if sent != '']
-        
-        return result[-1].strip()
+            outputs = self.model.generate(**inputs, max_new_tokens=300)
 
-    def create_chat_prompt(self, messages ):
+        standalone_query = self.tokenizer.decode(
+            outputs[0][inputs.input_ids.shape[1]: ],
+            skip_special_tokens = True
+        )
+
+        return standalone_query
+
+    def create_chat_prompt(self, messages):
         instruction_message = """
         ## Instructions
         - 당신은 사용자의 여러 대화 메시지를 하나의 검색 쿼리로 변환하는 전문가입니다.
@@ -33,11 +42,9 @@ class QueryTransformer():
         ## 대화
         """
 
-        dialogue = [message['content'] for message in messages if message['role'] == 'user']
-
-        prompt = [{"role": "user", "content": instruction_message + '\n'.join(dialogue)}]
-
-        chat_prompt = self.tokenizer.apply_chat_template(prompt, tokenize=False, add_generation_prompt=True)
+        dialogue = [{"role": message["role"], "content": message["content"]} for message in messages]
+        chat_prompt = [{"role": "user", "content": instruction_message}]
+        chat_prompt.extend(dialogue)
 
         return chat_prompt
     
