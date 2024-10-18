@@ -5,11 +5,12 @@ import numpy as np
 import faiss
 
 class QueryTransformer():
-    def __init__(self, tokenizer, model, device):
+    def __init__(self, tokenizer, model, gpt_client, device):
         self.tokenizer = tokenizer
         self.model = model
+        self.client = gpt_client
         self.device = device
-
+        
 
     def generate_standalone_query(self, chat_prompt):
         chat_template_prompt = self.tokenizer.apply_chat_template(
@@ -63,3 +64,41 @@ class QueryTransformer():
         print("\nstandalone query 생성 완료!")
 
         return results
+
+    def create_standalone_query_gpt(self, user_input):
+        system_message = {
+            "role": "system",
+            "content": """
+                당신은 과학적 또는 학문적 논의와 관련된 질문에 답변하는 전문가입니다.
+                질문이 전혀 과학적이지 않은 경우에만 '과학 관련 질문이 아닙니다.'라고 답변하세요.
+                질문이 과학과 조금이라도 아주 조금이라도 관련이 있다면, 예를 들어 음식, 여가 등 매우 기초적인 것이라도 그 질문을 구체적이고 명확한 검색 쿼리로 변환하세요.
+                과학적 논의는 자연과학, 사회과학, 기술, 심리학, 역사적 연구 등 다양한 학문 분야를 포함할 수 있습니다.
+                단, 변환된 쿼리를 명확히 출력하되, 변환 과정을 설명하거나 예시로 출력하지 말고, **변환된 쿼리만 출력하세요.**
+                
+                예를 들어:
+                - '복잡한 데이터 구조 설계 방법을 알려줘.' -> '복잡한 데이터 구조 설계 방법'
+                - '인간의 감정이 사회적 관계에 미치는 영향' -> '인간의 감정이 사회적 관계에 미치는 영향'
+                변환된 쿼리만 출력하세요.
+            """
+        }
+
+        user_message = {
+            "role" : 'user',
+            "content" : user_input
+        }
+
+        # 사용자 질문 준비
+        prompt = [system_message, user_message]
+
+        response = self.client.chat.completions.create(
+            model="gpt-4o",
+            messages=prompt,
+            temperature=0
+        )
+
+        standalone_query = response.choices[0].message.content 
+
+        if "과학 관련 질문이 아닙니다" in standalone_query:
+            return False
+        else:
+            return standalone_query
